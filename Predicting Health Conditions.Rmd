@@ -1,7 +1,7 @@
 ---
 title: "Predicting Health Conditions"
 author: "David Stanko"
-date: "2025-04-26"
+date: "2025-04-25"
 output: html_document
 ---
 
@@ -17,7 +17,7 @@ cancer.data <- read.csv("cancer_data.csv", stringsAsFactors = TRUE)
 diabetes.data.linear <- read.csv("diabetes_data_linear.csv", stringsAsFactors = TRUE)
 diabetes.data.nonlinear <- read.csv("diabetes_data_nonlinear.csv", stringsAsFactors = TRUE)
 ```
-
+ 
 ```{r}
 head(cancer.data)
 ```
@@ -61,6 +61,8 @@ We can implement a cost-sensitive SVM in R by using the `class.weights` paramete
 
 
 ## Define helper functions
+
+Instead of minimizing the accuracy while tuning hyperparameters, we will minimize the F1 score. Accuracy is a misleading metric for imbalanced classes. A better metric is the F1 score because it combines precision and recall. The function below calculates the F1 score given vectors of actual and predicted class labels. It will be used for tuning.
 
 ```{r}
 library(caret)
@@ -123,10 +125,26 @@ get.error.metrics <- function(model, train.data, test.data, target.col){
 }
 ```
 
+```{r}
+library(ROCR)
+
+# Function to make an ROC plot.
+# Parameters:
+#   fitted.values: numerical fitted values of SVM predictions
+#   true.classes: actual class labels
+
+rocplot <- function(fitted.values, true.classes, ...) {
+  predob <- prediction(fitted.values, true.classes)
+  perf <- performance(predob, "tpr", "fpr")
+  
+  plot(perf, ...)
+}
+```
+
 
 ## Use an SVM with a linear kernel to predict diabetes based on `bmi`, `weight`, and `age`
 
-First, we will tune the cost parameter. Instead of minimizing the accuracy while tuning hyperparameters, we will minimize the F1 score. Accuracy is a misleading metric for imbalanced classes. A better metric is the F1 score because it combines the 
+First, we will tune the cost parameter. 
 
 ```{r}
 library(e1071)
@@ -201,23 +219,11 @@ The plots show that, even when we use cost-sensitive SVMs, SVM is not a good mod
 Let's make an ROC plot for the test data:
 
 ```{r}
-library(ROCR)
-
-# Function to make an ROC plot
-rocplot <- function(fitted.values, true.classes, ...) {
-  predob <- prediction(fitted.values, true.classes)
-  perf <- performance(predob, "tpr", "fpr")
-  plot(perf, ...)
-}
-```
-
-
-```{r}
 fitted.vals.1 <- attributes(
                   predict(svm.diab.linear, newdata = diabetes.linear.test, decision.values = TRUE)
                )$decision.values
 
-rocplot(-fitted.vals.1, diabetes.linear.test$had_diabetes)
+rocplot(-fitted.vals.1, diabetes.linear.test$had_diabetes, use.lines=FALSE)
 abline(0, 1)
 ```
 
@@ -308,15 +314,13 @@ fitted.vals.2 <- attributes(
                   predict(svm.diab.nonlinear, newdata = diabetes.nonlinear.test, decision.values = TRUE)
                )$decision.values
 
-rocplot(-fitted.vals.2, diabetes.nonlinear.test$had_diabetes)
+rocplot(-fitted.vals.2, diabetes.nonlinear.test$had_diabetes, use.lines= FALSE)
 abline(0, 1)
 ```
 
 The ROC curve looks about the same as for the linear model. So, based only on the ROC curve, both models perform about equally well.
 
 ## Use an SVM with a radial kernel to predict the presence of cancer
-
-13.55 is decent, but overfits the minority class by 15%.
 
 ```{r}
 library(e1071)
@@ -367,47 +371,76 @@ Using trial and error, I tried many different weight combinations for `class.wei
 This model predicts the minority class the best out of all the models, but it predicts the majority class the worst. So, if the goal is to accurately predict when someone *does* have a certain health condition, this model performs the best. If the goal is to predict when someone *does not* have the condition, it performs the worst. However, overfitting is a major problem, so we should take this model with a grain of salt. The fact that there were no class weights that made the model perform reasonably, suggests that a radial kernel is not the right kernel for this data.
 
 ```{r}
-plot(svm.cancer, cancer.train, age ~ hours_worked_weekly)
+plot(svm.cancer, cancer.train, age ~ hours_worked_weekly, symbolPalette = c("lightblue", "black"))
 ```
 
-Hours worked weekly is a strong predictor. Strangely, people whose working hours were about 2 to 3 standard deviations above the mean, were not predicted to have cancer, no matter their age. 
-
-```{r}
-plot(svm.cancer, cancer.train, age ~ height)
-```
+Hours worked weekly is a strong predictor. Strangely, people whose working hours were about 2 to 3 standard deviations (SDs) above the mean, were not predicted to have cancer, no matter their age. Also, as the hours go from -3 to 2 SDs from the mean, the age at which people have cancer increases. So, working *fewer* hours *increases* the risk of cancer. This is the opposite of what I expected. I've heard that stress puts people more at risk of health conditions, so I thought that people who work *more* than an average person, would be more likely to have a health condition. The opposite is true. 
 
 ```{r}
-plot(svm.cancer, cancer.train, age ~ weight, symbolPalette = c("red", "green"))
+plot(svm.cancer, cancer.train, age ~ height, symbolPalette = c("lightblue", "black"))
 ```
 
-```{r}
-plot(svm.cancer, cancer.train, age ~ bmi, symbolPalette = c("red", "green"))
-```
+Here, we have a shape that's like a parabola because it "peaks" at height = 1. But the "peak" is small compared to the trends we've seen with other predictors. For people whose height is about 1 SD above the mean, they have a higher age at which they're predicted to have cancer. People at different heights are predicted to have cancer at lower ages. I didn't think there was a correlation between height and cancer. However, I can't fully trust this model because of overfitting, class imbalance, and class overlap. 
+
+Height = 1 -> less risk of cancer
 
 ```{r}
-plot(svm.cancer, cancer.train, age ~ days_used_alcohol_yearly)
+library(scales)
+plot(svm.cancer, cancer.train, age ~ weight, symbolPalette = c("lightblue", "green"))
 ```
+
+People with a higher weight (> 2 SDs above the mean) are never predicted to have cancer. Before that, as the weight increases, the age at which someone is predicted to have cancer increases. So, if someone has a lower weight, they're more likely to have cancer at a younger age.
+
+Weight > 2 SDs above mean => no risk of cancer
+
+Before that, lower weight = risk of cancer at young age
+
+```{r}
+# Plotting the test data here because I couldn't see the boundary with the training data
+plot(svm.cancer, cancer.test, age ~ bmi, symbolPalette = c("lightblue", "green"))
+```
+People with a higher BMI (> 2.5 SDs) above the mean are never predicted to have cancer, regardless of age.
+
+```{r}
+plot(svm.cancer, cancer.train, age ~ days_used_alcohol_yearly, symbolPalette = c("lightblue", "green"))
+```
+
+Both predictors are important. We have a parabolic-looking trend where people whose alcohol use was below the mean or 3 SDs above are predicted to have cancer at younger ages. But then, people whose alcohol use is 1 or 2 SDs above the mean need to be older in order to have cancer. This is surprising because I've heard that high alcohol use increases the risk of cancer. But, here, people with alcohol use *below the mean* or 3 standard deviations above the mean are predicted to have cancer at younger ages.
+
+Alcohol use = 1 => less likely to have cancer
+
+Alcohol use != 1 => more likely
 
 Let's plot the ROC curve and compare it with the others:
+
+```{r}
+
+```
 
 ```{r}
 fitted.vals.3 <- attributes(
                   predict(svm.cancer, newdata = cancer.test, decision.values = TRUE)
                )$decision.values
 
-rocplot(-fitted.vals.3, cancer.test$had_cancer)
+rocplot(-fitted.vals.1, diabetes.linear.test$had_diabetes, col="red", use.lines = FALSE)
+
+rocplot(-fitted.vals.2, diabetes.nonlinear.test$had_diabetes, col="blue", add = T)
+
+rocplot(-fitted.vals.3, cancer.test$had_cancer, col="green", add = T)
 abline(0, 1)
+
+legend("bottomright", legend = c("Linear Kernel - Diabetes", "Polynomial Kernel - Diabetes", "Radial Kernel - Cancer"), fill = c("red", "blue", "green"))
+title("ROC Curves for All Models")
 ```
 
-```{r}
-rocplot(-fitted.vals.1, cancer.test$had_cancer, col="red")
-rocplot(-fitted.vals.2, cancer.test$had_cancer, col="blue")
-rocplot(-fitted.vals.3, cancer.test$had_cancer, col="green")
+The linear model and the polynomial one are about equally close to the top left corner. The radial model is farther from the top left corner and closer to the diagonal line. So, the overall performance of the linear and polynomial models, considering all trade-offs, is better than the radial one.
 
-abline(0, 1)
-```
 
-When we plot all 3 ROC curves together, the model for predicting cancer is the closest to the top left corner. That suggests that its overall performance, considering trade-offs, is the best. Although this model overfit the minority class, the ROC curve demonstrates that it performs best on the test data.
+
+
+
+
+
 
 
 
