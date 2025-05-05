@@ -382,18 +382,12 @@ plot(svm.cancer, cancer.train, age ~ height, symbolPalette = c("lightblue", "bla
 
 Here, we have a shape that's like a parabola because it "peaks" at height = 1. But the "peak" is small compared to the trends we've seen with other predictors. For people whose height is about 1 SD above the mean, they have a higher age at which they're predicted to have cancer. People at different heights are predicted to have cancer at lower ages. I didn't think there was a correlation between height and cancer. However, I can't fully trust this model because of overfitting, class imbalance, and class overlap. 
 
-Height = 1 -> less risk of cancer
-
 ```{r}
 library(scales)
 plot(svm.cancer, cancer.train, age ~ weight, symbolPalette = c("lightblue", "green"))
 ```
 
 People with a higher weight (> 2 SDs above the mean) are never predicted to have cancer. Before that, as the weight increases, the age at which someone is predicted to have cancer increases. So, if someone has a lower weight, they're more likely to have cancer at a younger age.
-
-Weight > 2 SDs above mean => no risk of cancer
-
-Before that, lower weight = risk of cancer at young age
 
 ```{r}
 # Plotting the test data here because I couldn't see the boundary with the training data
@@ -407,15 +401,7 @@ plot(svm.cancer, cancer.train, age ~ days_used_alcohol_yearly, symbolPalette = c
 
 Both predictors are important. We have a parabolic-looking trend where people whose alcohol use was below the mean or 3 SDs above are predicted to have cancer at younger ages. But then, people whose alcohol use is 1 or 2 SDs above the mean need to be older in order to have cancer. This is surprising because I've heard that high alcohol use increases the risk of cancer. But, here, people with alcohol use *below the mean* or 3 standard deviations above the mean are predicted to have cancer at younger ages.
 
-Alcohol use = 1 => less likely to have cancer
-
-Alcohol use != 1 => more likely
-
 Let's plot the ROC curve and compare it with the others:
-
-```{r}
-
-```
 
 ```{r}
 fitted.vals.3 <- attributes(
